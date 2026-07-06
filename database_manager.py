@@ -1,634 +1,540 @@
-import mysql.connector
-import sys
 import os
-from datetime import datetime
-import pytz
+import sys
+from datetime import datetime, time
+from typing import Any, Dict, List, Optional
+
+import firebase_admin
+from firebase_admin import credentials, firestore
+
 
 class DatabaseManager:
     def __init__(self):
-        # Garante que a instância sempre terá o atributo mesmo se a conexão falhar
-        self.connection = None
-        try:
-            # Usa o my.cnf localizado no mesmo diretório do módulo para evitar problemas de cwd
-            cfg_path = os.path.join(os.path.dirname(__file__), "my.cnf")
-            if not os.path.exists(cfg_path):
-                raise FileNotFoundError(f"Arquivo de configuração de DB não encontrado: {cfg_path}")
+        self.db = self._init_firestore()
 
-            # timeout curto para falhar rápido em caso de problemas de rede
-            self.connection = mysql.connector.connect(option_files=cfg_path, connection_timeout=10)
-            # MODIFICADO: Removido self.cursor daqui, pois cada função gerenciará o seu.
-            print(f"Conexão MySQL aberta com sucesso! ID: {self.connection.connection_id}")
-        except mysql.connector.Error as e:
-            print(f"Erro ao conectar ao MySQL: {e}\nVerifique rede, porta e credenciais no my.cnf.")
-            # Não faz exit imediato para permitir tratamento pelo caller
-        except FileNotFoundError as e:
-            print(e)
+    def _init_firestore(self):
+        cred_path = os.getenv(
+            "FIREBASE_CREDENTIALS",
+            os.path.join(os.path.dirname(__file__), "firebase_credentials.json"),
+        )
+
+        if not os.path.exists(cred_path):
+            raise FileNotFoundError(
+                f"Arquivo de credenciais Firebase não encontrado: {cred_path}. "
+                "Defina FIREBASE_CREDENTIALS ou coloque firebase_credentials.json no diretório do projeto."
+            )
+
+        try:
+            cred = credentials.Certificate(cred_path)
+            if not firebase_admin._apps:
+                firebase_admin.initialize_app(cred)
+            return firestore.client()
+        except Exception as e:
+            print(f"Erro ao inicializar o Firebase: {e}")
+            sys.exit(1)
+
+    def _next_id(self, name: str) -> int:
+        counter_ref = self.db.collection("counters").document(name)
+
+        @firestore.transactional
+        def increment(transaction, doc_ref):
+            snapshot = doc_ref.get(transaction=transaction)
+            if snapshot.exists and snapshot.get("value") is not None:
+                next_id = snapshot.get("value") + 1
+                transaction.update(doc_ref, {"value": next_id})
+            else:
+                next_id = 1
+                transaction.set(doc_ref, {"value": next_id})
+            return next_id
+
+        transaction = self.db.transaction()
+        return increment(transaction, counter_ref)
+
+    def _format_time(self, value: Any) -> Optional[time]:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.time()
+        if isinstance(value, time):
+            return value
+        if isinstance(value, str):
+            return datetime.strptime(value, "%H:%M:%S").time()
+        return None
 
     # -------------------- CLIENTE --------------------
-    # MODIFICADO: Aplicado o 'with' statement e hashing de senha
     def create_client(self, usuario, email, senha, nome_completo, telefone, cpf):
-        try:
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT IGNORE INTO usuario (usuario, email, senha, is_restaurante) VALUES (%s, %s, %s, FALSE)",
-                    (usuario, email, senha)
-                )
-                usuario_id = cursor.lastrowid
-                
-                if usuario_id == 0:
-                    print(f"Usuário '{usuario}' ou email '{email}' já existe. Não é possível criar novo cliente.")
-                    return None
-
-                cursor.execute(
-                    "INSERT IGNORE INTO cliente (usuario_id, nome_completo, email, telefone, cpf) VALUES (%s, %s, %s, %s, %s)",
-                    (usuario_id, nome_completo, email, telefone, cpf)
-                )
-                cliente_id = cursor.lastrowid
-                self.connection.commit()
-                return cliente_id
-        except mysql.connector.Error as e:
-            print(f"Erro ao criar cliente: {e}")
-            self.connection.rollback()
+        usuario_exists = self.db.collection("users")
+        usuario_query = usuario_exists.where("usuario", "==", usuario).limit(1).get()
+        email_query = usuario_exists.where("email", "==", email).limit(1).get()
+        if usuario_query or email_query:
             return None
+
+        usuario_id = self._next_id("usuario")
+        cliente_id = self._next_id("cliente")
+
+        self.db.collection("users").document(str(usuario_id)).set(
+            {
+                "usuario_id": usuario_id,
+                "usuario": usuario,
+                "email": email,
+                "senha": senha,
+                "is_restaurante": False,
+            }
+        )
+        self.db.collection("clients").document(str(cliente_id)).set(
+            {
+                "cliente_id": cliente_id,
+                "usuario_id": usuario_id,
+                "nome_completo": nome_completo,
+                "email": email,
+                "telefone": telefone,
+                "cpf": cpf,
+            }
+        )
+        return cliente_id
 
     # -------------------- RESTAURANTE --------------------
     def create_restaurant(self, usuario, email, senha, nome, telefone, tipo_culinaria, endereco, taxa_entrega, tempo_estimado):
-        try:
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT IGNORE INTO usuario (usuario, email, senha, is_restaurante) VALUES (%s, %s, %s, TRUE)",
-                    (usuario, email, senha)
-                )
-                usuario_id = cursor.lastrowid
-
-                if usuario_id == 0:
-                    print(f"Usuário '{usuario}' ou email '{email}' já existe. Não é possível criar novo restaurante.")
-                    self.connection.rollback()
-                    return None
-
-                cursor.execute(
-                    "INSERT INTO enderecos_restaurante (rua, num, bairro, cidade, estado, cep) VALUES (%s, %s, %s, %s, %s, %s)",
-                    (endereco['rua'], endereco['num'], endereco['bairro'], endereco['cidade'], endereco['estado'], endereco['cep'])
-                )
-                id_end_rest = cursor.lastrowid
-                
-                cursor.execute(
-                    """INSERT INTO restaurante 
-                    (usuario_id, id_end_rest, nome, telefone, tipo_culinaria, taxa_entrega, tempo_entrega_estimado) 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                    (usuario_id, id_end_rest, nome, telefone, tipo_culinaria, taxa_entrega, tempo_estimado)
-                )
-                restaurante_id = cursor.lastrowid
-                self.connection.commit()
-                
-                # NOVO: Retorna um dicionário com os IDs necessários para o login automático
-                return {'restaurante_id': restaurante_id, 'usuario_id': usuario_id}
-        except mysql.connector.Error as e:
-            print(f"Erro ao criar restaurante: {e}")
-            self.connection.rollback()
+        usuario_exists = self.db.collection("users")
+        usuario_query = usuario_exists.where("usuario", "==", usuario).limit(1).get()
+        email_query = usuario_exists.where("email", "==", email).limit(1).get()
+        if usuario_query or email_query:
             return None
 
+        usuario_id = self._next_id("usuario")
+        restaurante_id = self._next_id("restaurante")
+        id_end_rest = self._next_id("enderecos_restaurante")
+
+        self.db.collection("users").document(str(usuario_id)).set(
+            {
+                "usuario_id": usuario_id,
+                "usuario": usuario,
+                "email": email,
+                "senha": senha,
+                "is_restaurante": True,
+            }
+        )
+
+        self.db.collection("restaurant_addresses").document(str(id_end_rest)).set(
+            {
+                "id_end_rest": id_end_rest,
+                "rua": endereco["rua"],
+                "num": endereco["num"],
+                "bairro": endereco["bairro"],
+                "cidade": endereco["cidade"],
+                "estado": endereco["estado"],
+                "cep": endereco["cep"],
+            }
+        )
+
+        self.db.collection("restaurants").document(str(restaurante_id)).set(
+            {
+                "id_restaurante": restaurante_id,
+                "usuario_id": usuario_id,
+                "id_end_rest": id_end_rest,
+                "nome": nome,
+                "telefone": telefone,
+                "tipo_culinaria": tipo_culinaria,
+                "taxa_entrega": float(taxa_entrega) if taxa_entrega else 0.0,
+                "tempo_entrega_estimado": tempo_estimado,
+            }
+        )
+
+        return {"restaurante_id": restaurante_id, "usuario_id": usuario_id}
+
     # -------------------- HORÁRIOS --------------------
+    def add_schedule(self, id_restaurante, dia_semana, horario_abertura, horario_fechamento):
+        doc_ref = self.db.collection("restaurant_schedules").document(str(id_restaurante))
+        doc_ref.set(
+            {
+                dia_semana: {
+                    "horario_abertura": horario_abertura,
+                    "horario_fechamento": horario_fechamento,
+                }
+            },
+            merge=True,
+        )
 
     def get_restaurant_schedule(self, id_restaurante):
-        """Busca todos os horários de funcionamento cadastrados para um restaurante."""
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                cursor.execute(
-                    "SELECT dia_semana, horario_abertura, horario_fechamento FROM horarios_funcionamento_restaurante WHERE id_restaurante = %s",
-                    (id_restaurante,)
-                )
-                return cursor.fetchall()
-        except mysql.connector.Error as e:
-            print(f"Erro ao buscar horários: {e}")
+        doc = self.db.collection("restaurant_schedules").document(str(id_restaurante)).get()
+        if not doc.exists:
             return []
+        data = doc.to_dict()
+        schedule = []
+        for dia, tempos in data.items():
+            schedule.append(
+                {
+                    "dia_semana": dia,
+                    "horario_abertura": self._format_time(tempos.get("horario_abertura")),
+                    "horario_fechamento": self._format_time(tempos.get("horario_fechamento")),
+                }
+            )
+        return schedule
 
     def update_schedule(self, id_restaurante, horarios):
-        """Apaga os horários antigos e insere os novos para um restaurante."""
         try:
-            with self.connection.cursor() as cursor:
-                # 1. Apaga todos os horários existentes para este restaurante
-                cursor.execute("DELETE FROM horarios_funcionamento_restaurante WHERE id_restaurante = %s", (id_restaurante,))
-                
-                # 2. Insere os novos horários
-                sql = "INSERT INTO horarios_funcionamento_restaurante (id_restaurante, dia_semana, horario_abertura, horario_fechamento) VALUES (%s, %s, %s, %s)"
-                valores = []
-                for dia, tempos in horarios.items():
-                    if tempos['abertura'] and tempos['fechamento']: # Só insere se ambos os horários foram fornecidos
-                        valores.append((id_restaurante, dia, tempos['abertura'], tempos['fechamento']))
-                
-                if valores:
-                    cursor.executemany(sql, valores)
-                
-                self.connection.commit()
-                return True
-        except mysql.connector.Error as e:
+            doc_ref = self.db.collection("restaurant_schedules").document(str(id_restaurante))
+            saved = {}
+            for dia, tempos in horarios.items():
+                if tempos["abertura"] and tempos["fechamento"]:
+                    saved[dia] = {
+                        "horario_abertura": tempos["abertura"],
+                        "horario_fechamento": tempos["fechamento"],
+                    }
+            doc_ref.set(saved, merge=True)
+            return True
+        except Exception as e:
             print(f"Erro ao atualizar horários: {e}")
-            self.connection.rollback()
             return False
 
     def is_restaurant_open(self, id_restaurante):
-        """Verifica se um restaurante está aberto no momento atual (fuso de Brasília)."""
-        try:
-            # Mapeia o dia da semana do Python (0=Segunda) para o ENUM do SQL
-            dias_semana_map = {
-                0: 'Segunda', 1: 'Terça', 2: 'Quarta', 3: 'Quinta',
-                4: 'Sexta', 5: 'Sábado', 6: 'Domingo'
-            }
-
-            # Define o fuso horário correto (ex: Brasília, que é UTC-3)
-            fuso_horario_brasilia = pytz.timezone('America/Sao_Paulo')
-            agora = datetime.now(fuso_horario_brasilia)
-
-            dia_semana_atual = dias_semana_map[agora.weekday()]
-            hora_atual = agora.time()
-
-            with self.connection.cursor(dictionary=True) as cursor:
-                cursor.execute(
-                    "SELECT horario_abertura, horario_fechamento FROM horarios_funcionamento_restaurante WHERE id_restaurante = %s AND dia_semana = %s",
-                    (id_restaurante, dia_semana_atual)
-                )
-                horario = cursor.fetchone()
-
-                if not horario or not horario['horario_abertura'] or not horario['horario_fechamento']:
-                    return False # Não funciona hoje ou não tem horário cadastrado
-
-                # Converte os timedelta do banco para time do Python
-                abertura = (datetime.min + horario['horario_abertura']).time()
-                fechamento = (datetime.min + horario['horario_fechamento']).time()
-
-                return abertura <= hora_atual < fechamento
-
-        except mysql.connector.Error as e:
-            print(f"Erro ao verificar se o restaurante está aberto: {e}")
+        doc = self.db.collection("restaurant_schedules").document(str(id_restaurante)).get()
+        if not doc.exists:
             return False
 
+        data = doc.to_dict()
+        fuso_horario_brasilia = datetime.now().astimezone().tzinfo
+        agora = datetime.now()
+        dia_semana_map = {
+            0: "Segunda",
+            1: "Terça",
+            2: "Quarta",
+            3: "Quinta",
+            4: "Sexta",
+            5: "Sábado",
+            6: "Domingo",
+        }
+        dia_atual = dia_semana_map[agora.weekday()]
+        horario = data.get(dia_atual)
+        if not horario:
+            return False
+
+        abertura = self._format_time(horario.get("horario_abertura"))
+        fechamento = self._format_time(horario.get("horario_fechamento"))
+        if not abertura or not fechamento:
+            return False
+
+        hora_atual = agora.time()
+        return abertura <= hora_atual < fechamento
 
     # -------------------- PEDIDOS --------------------
-    # MODIFICADO: Aplicado o 'with' statement
     def create_order(self, id_cliente, id_restaurante, id_forma_pagamento, endereco_id, taxa_entrega):
-        try:
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    """INSERT INTO pedido 
-                       (id_cliente, id_restaurante, id_forma_pagamento, endereco_id, valor_total) 
-                       VALUES (%s, %s, %s, %s, %s)""",
-                    (id_cliente, id_restaurante, id_forma_pagamento, endereco_id, taxa_entrega)
-                )
-                self.connection.commit()
-                return cursor.lastrowid
-        except mysql.connector.Error as e:
-            print(f"Erro ao criar pedido: {e}")
-            self.connection.rollback()
-            return None
+        pedido_id = self._next_id("pedido")
+        self.db.collection("orders").document(str(pedido_id)).set(
+            {
+                "id_pedido": pedido_id,
+                "id_cliente": id_cliente,
+                "id_restaurante": id_restaurante,
+                "id_forma_pagamento": id_forma_pagamento,
+                "endereco_id": endereco_id,
+                "dataHora": firestore.SERVER_TIMESTAMP,
+                "status_pedido": "Pendente",
+                "valor_total": float(taxa_entrega),
+                "foi_avaliado": False,
+            }
+        )
+        return pedido_id
 
-    # MODIFICADO: Aplicado o 'with' statement
     def add_order_item(self, id_pedido, id_prato, qtd, preco_item, observacoes):
-        try:
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO item_pedido (id_pedido, id_prato, qtd, preco_item, observacoes) VALUES (%s, %s, %s, %s, %s)",
-                    (id_pedido, id_prato, qtd, preco_item, observacoes)
-                )
-                self.connection.commit()
-        except mysql.connector.Error as e:
-            print(f"Erro ao adicionar item de pedido: {e}")
-            self.connection.rollback()
+        item_id = f"{id_pedido}_{id_prato}"
+        self.db.collection("order_items").document(item_id).set(
+            {
+                "id_pedido": id_pedido,
+                "id_prato": id_prato,
+                "qtd": qtd,
+                "preco_item": float(preco_item),
+                "observacoes": observacoes,
+            }
+        )
+        order_ref = self.db.collection("orders").document(str(id_pedido))
+        order_snapshot = order_ref.get()
+        if order_snapshot.exists:
+            current = order_snapshot.to_dict().get("valor_total", 0.0)
+            order_ref.update({"valor_total": current + float(qtd) * float(preco_item)})
 
-    # MODIFICADO: Aplicado o 'with' statement
     def update_order_status(self, id_pedido, status):
-        try:
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    "UPDATE pedido SET status_pedido = %s WHERE id_pedido = %s",
-                    (status, id_pedido)
-                )
-                self.connection.commit()
-        except mysql.connector.Error as e:
-            print(f"Erro ao atualizar status do pedido: {e}")
-            self.connection.rollback()
-    
+        self.db.collection("orders").document(str(id_pedido)).update({"status_pedido": status})
+
     def get_order_details(self, pedido_id):
-        """Busca os detalhes de um único pedido, incluindo o ID do cliente."""
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                cursor.execute("SELECT * FROM pedido WHERE id_pedido = %s", (pedido_id,))
-                return cursor.fetchone()
-        except mysql.connector.Error as e:
-            print(f"Erro ao buscar detalhes do pedido: {e}")
-            return None
-
-
+        doc = self.db.collection("orders").document(str(pedido_id)).get()
+        return doc.to_dict() if doc.exists else None
 
     # -------------------- AVALIAÇÃO --------------------
-    # MODIFICADO: Aplicado o 'with' statement
     def add_review(self, pedido_id, restaurante_id, cliente_id, nota, feedback):
-        """Salva uma nova avaliação no banco de dados."""
-        try:
-            with self.connection.cursor() as cursor:
-                # Esta query agora está correta para sua nova estrutura de tabela
-                query = """
-                    INSERT INTO avaliacoes_restaurante (id_pedido, id_restaurante, id_cliente, nota, feedback)
-                    VALUES (%s, %s, %s, %s, %s)
-                """
-                cursor.execute(query, (pedido_id, restaurante_id, cliente_id, nota, feedback))
-                self.connection.commit()
-                return cursor.lastrowid
-        except mysql.connector.Error as e:
-            print(f"Erro ao adicionar avaliação: {e}")
-            self.connection.rollback()
-            return None
+        review_id = self._next_id("avaliacoes_restaurante")
+        client_doc = self.db.collection("clients").document(str(cliente_id)).get()
+        cliente_nome = client_doc.to_dict().get("nome_completo") if client_doc.exists else None
+        self.db.collection("restaurant_reviews").document(str(review_id)).set(
+            {
+                "id_avaliacao": review_id,
+                "id_restaurante": restaurante_id,
+                "id_cliente": cliente_id,
+                "nota": int(nota) if nota is not None else None,
+                "feedback": feedback,
+                "data_hora": firestore.SERVER_TIMESTAMP,
+                "id_pedido": pedido_id,
+                "nome_cliente": cliente_nome,
+            }
+        )
+        return review_id
 
     def mark_order_as_reviewed(self, pedido_id):
-        """Marca um pedido como avaliado para evitar duplicatas."""
-        try:
-            with self.connection.cursor() as cursor:
-                cursor.execute("UPDATE pedido SET foi_avaliado = TRUE WHERE id_pedido = %s", (pedido_id,))
-                self.connection.commit()
-        except mysql.connector.Error as e:
-            print(f"Erro ao marcar pedido como avaliado: {e}")
-            self.connection.rollback()
+        self.db.collection("orders").document(str(pedido_id)).update({"foi_avaliado": True})
 
     def get_reviews_for_restaurant(self, restaurante_id):
-        """Busca todas as avaliações de um restaurante."""
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                query = """
-                    SELECT ar.nota, ar.feedback, c.nome_completo 
-                    FROM avaliacoes_restaurante AS ar
-                    JOIN cliente AS c ON ar.id_cliente = c.cliente_id
-                    WHERE ar.id_restaurante = %s
-                    ORDER BY ar.id_avaliacao DESC
-                """
-                cursor.execute(query, (restaurante_id,))
-                return cursor.fetchall()
-        except mysql.connector.Error as e:
-            print(f"Erro ao buscar avaliações: {e}")
-            return []
+        query = self.db.collection("restaurant_reviews").where("id_restaurante", "==", restaurante_id).order_by("data_hora", direction=firestore.Query.DESCENDING)
+        return [doc.to_dict() for doc in query.stream()]
 
     # -------------------- LOGIN --------------------
-    # MODIFICADO: Aplicado o 'with' statement e hashing de senha
     def login_user(self, usuario, senha):
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                query = """
-                    SELECT u.usuario_id, u.senha, u.is_restaurante, c.cliente_id, r.id_restaurante
-                    FROM usuario AS u
-                    LEFT JOIN cliente AS c ON u.usuario_id = c.usuario_id
-                    LEFT JOIN restaurante AS r ON u.usuario_id = r.usuario_id
-                    WHERE u.usuario = %s
-                """
-                cursor.execute(query, (usuario,))
-                user_data = cursor.fetchone()
-                
-                if user_data:
-                    if user_data['senha'] == senha:
-                        return {
-                            'usuario_id': user_data['usuario_id'],
-                            'is_restaurante': user_data['is_restaurante'],
-                            'cliente_id': user_data['cliente_id'],
-                            'restaurante_id': user_data['id_restaurante']
-                        }
-                return None
-        except mysql.connector.Error as e:
-            print(f"Erro durante o login: {e}")
+        users_ref = self.db.collection("users")
+        query = users_ref.where("usuario", "==", usuario).limit(1).get()
+        if not query:
             return None
+
+        user_data = query[0].to_dict()
+        if user_data.get("senha") != senha:
+            return None
+
+        result = {
+            "usuario_id": user_data["usuario_id"],
+            "is_restaurante": user_data["is_restaurante"],
+            "cliente_id": None,
+            "restaurante_id": None,
+        }
+
+        if user_data.get("is_restaurante"):
+            restaurant_query = self.db.collection("restaurants").where("usuario_id", "==", user_data["usuario_id"]).limit(1).get()
+            if restaurant_query:
+                result["restaurante_id"] = restaurant_query[0].to_dict().get("id_restaurante")
+        else:
+            client_query = self.db.collection("clients").where("usuario_id", "==", user_data["usuario_id"]).limit(1).get()
+            if client_query:
+                result["cliente_id"] = client_query[0].to_dict().get("cliente_id")
+
+        return result
 
     # -------------------- CARDÁPIO E CONSULTAS --------------------
-    # MODIFICADO: Aplicado o 'with' statement
     def add_dish_category(self, id_restaurante, nome_categoria):
-        try:
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO categoria_pratos (id_restaurante, nome_categoria) VALUES (%s, %s)",
-                    (id_restaurante, nome_categoria)
-                )
-                self.connection.commit()
-                return cursor.lastrowid
-        except mysql.connector.Error as e:
-            print(f"Erro ao adicionar categoria de prato: {e}")
-            self.connection.rollback()
+        category_query = self.db.collection("restaurant_categories").where("id_restaurante", "==", id_restaurante).where("nome_categoria", "==", nome_categoria).limit(1).get()
+        if category_query:
             return None
+        categoria_id = self._next_id("categoria_pratos")
+        self.db.collection("restaurant_categories").document(str(categoria_id)).set(
+            {
+                "categoria_id": categoria_id,
+                "id_restaurante": id_restaurante,
+                "nome_categoria": nome_categoria,
+            }
+        )
+        return categoria_id
 
-    # MODIFICADO: Aplicado o 'with' statement
     def add_dish(self, categoria_id, nome_prato, descricao, preco):
-        try:
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO pratos (categoria_id, nome_prato, descricao, preco) VALUES (%s, %s, %s, %s)",
-                    (categoria_id, nome_prato, descricao, preco)
-                )
-                self.connection.commit()
-                return cursor.lastrowid
-        except mysql.connector.Error as e:
-            print(f"Erro ao adicionar prato: {e}")
-            self.connection.rollback()
+        categoria_doc = self.db.collection("restaurant_categories").document(str(categoria_id)).get()
+        if not categoria_doc.exists:
             return None
+        categoria = categoria_doc.to_dict()
+        dish_id = self._next_id("pratos")
+        self.db.collection("dishes").document(str(dish_id)).set(
+            {
+                "id_prato": dish_id,
+                "categoria_id": categoria_id,
+                "nome_prato": nome_prato,
+                "descricao": descricao,
+                "preco": float(preco),
+                "status_disp": True,
+                "id_restaurante": categoria["id_restaurante"],
+            }
+        )
+        return dish_id
 
-    # MODIFICADO: Aplicado o 'with' statement
     def get_all_restaurants(self):
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                # Adicionamos a chamada para a função fn_media_avaliacao que você já criou no SQL
-                query = """
-                    SELECT 
-                        id_restaurante, 
-                        nome, 
-                        tipo_culinaria, 
-                        taxa_entrega, 
-                        tempo_entrega_estimado,
-                        fn_media_avaliacao(id_restaurante) AS media_avaliacoes
-                    FROM restaurante
-                """
-                cursor.execute(query)
-                return cursor.fetchall()
-        except mysql.connector.Error as e:
-            print(f"Erro ao buscar restaurantes: {e}")
-            return []
+        restaurants = [doc.to_dict() for doc in self.db.collection("restaurants").stream()]
+        for restaurant in restaurants:
+            restaurant["media_avaliacoes"] = self._calculate_average_rating(restaurant["id_restaurante"])
+        return restaurants
 
-    # MODIFICADO: Aplicado o 'with' statement
+    def _calculate_average_rating(self, restaurante_id):
+        reviews = self.db.collection("restaurant_reviews").where("id_restaurante", "==", restaurante_id).stream()
+        values = [doc.to_dict().get("nota", 0) for doc in reviews]
+        return round(sum(values) / len(values), 2) if values else 0
+
     def get_restaurant_menu(self, id_restaurante):
-        """Busca o cardápio de um restaurante PARA O CLIENTE, trazendo apenas pratos disponíveis."""
+        categories = {doc.to_dict()["categoria_id"]: doc.to_dict()["nome_categoria"] for doc in self.db.collection("restaurant_categories").where("id_restaurante", "==", id_restaurante).stream()}
+        menu_items = self.db.collection("dishes").where("id_restaurante", "==", id_restaurante).where("status_disp", "==", True).stream()
         menu = {}
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                query = """
-                    SELECT cp.nome_categoria, p.id_prato, p.nome_prato, p.descricao, p.preco, p.status_disp
-                    FROM pratos AS p
-                    JOIN categoria_pratos AS cp ON p.categoria_id = cp.categoria_id
-                    WHERE cp.id_restaurante = %s AND p.status_disp = TRUE
-                    ORDER BY cp.nome_categoria, p.nome_prato;
-                """
-                cursor.execute(query, (id_restaurante,))
-                menu_items = cursor.fetchall()
-                
-                for item in menu_items:
-                    categoria = item['nome_categoria']
-                    if categoria not in menu:
-                        menu[categoria] = []
-                    menu[categoria].append(item)
-                return menu
-        except mysql.connector.Error as e:
-            print(f"Erro ao buscar o cardápio: {e}")
-            return {}
+        for item in menu_items:
+            dish = item.to_dict()
+            categoria = categories.get(dish["categoria_id"], "Sem Categoria")
+            menu.setdefault(categoria, []).append(dish)
+        return menu
 
-    # NOVO MÉTODO: Para o painel de gerenciamento do restaurante
     def get_full_restaurant_menu_for_admin(self, id_restaurante):
-        """Busca o cardápio completo de um restaurante PARA O ADMIN, incluindo pratos indisponíveis."""
+        categories = {doc.to_dict()["categoria_id"]: doc.to_dict()["nome_categoria"] for doc in self.db.collection("restaurant_categories").where("id_restaurante", "==", id_restaurante).stream()}
+        menu_items = self.db.collection("dishes").where("id_restaurante", "==", id_restaurante).stream()
         menu = {}
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                query = """
-                    SELECT cp.nome_categoria, p.id_prato, p.nome_prato, p.descricao, p.preco, p.status_disp
-                    FROM pratos AS p
-                    JOIN categoria_pratos AS cp ON p.categoria_id = cp.categoria_id
-                    WHERE cp.id_restaurante = %s
-                    ORDER BY cp.nome_categoria, p.nome_prato;
-                """
-                cursor.execute(query, (id_restaurante,))
-                menu_items = cursor.fetchall()
+        for item in menu_items:
+            dish = item.to_dict()
+            categoria = categories.get(dish["categoria_id"], "Sem Categoria")
+            menu.setdefault(categoria, []).append(dish)
+        return menu
 
-                for item in menu_items:
-                    categoria = item['nome_categoria']
-                    if categoria not in menu:
-                        menu[categoria] = []
-                    menu[categoria].append(item)
-                return menu
-        except mysql.connector.Error as e:
-            print(f"Erro ao buscar o cardápio completo para o admin: {e}")
-            return {}
-
-    # MODIFICADO: Aplicado o 'with' statement
     def get_orders_for_restaurant(self, id_restaurante):
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                query = """
-                    SELECT p.id_pedido, p.dataHora, p.status_pedido, p.valor_total, c.nome_completo 
-                    FROM pedido AS p JOIN cliente AS c ON p.id_cliente = c.cliente_id
-                    WHERE p.id_restaurante = %s 
-                    ORDER BY p.dataHora DESC;
-                """
-                cursor.execute(query, (id_restaurante,))
-                return cursor.fetchall()
-        except mysql.connector.Error as e:
-            print(f"Erro ao buscar pedidos do restaurante: {e}")
-            return []
+        orders = self.db.collection("orders").where("id_restaurante", "==", id_restaurante).stream()
+        enriched = []
+        for doc in orders:
+            order = doc.to_dict()
+            cliente_doc = self.db.collection("clients").document(str(order.get("id_cliente"))).get()
+            order["nome_completo"] = cliente_doc.to_dict().get("nome_completo") if cliente_doc.exists else None
+            enriched.append(order)
+        return enriched
 
     def get_orders_for_client(self, id_cliente):
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                # MODIFICADO: Adicionado 'p.id_restaurante' à consulta
-                query = """
-                    SELECT p.id_pedido, p.dataHora, p.status_pedido, p.valor_total, 
-                        p.foi_avaliado, r.nome as nome_restaurante, p.id_restaurante
-                    FROM pedido AS p 
-                    JOIN restaurante AS r ON p.id_restaurante = r.id_restaurante
-                    WHERE p.id_cliente = %s 
-                    ORDER BY p.dataHora DESC;
-                """
-                cursor.execute(query, (id_cliente,))
-                return cursor.fetchall()
-        except mysql.connector.Error as e:
-            print(f"Erro ao buscar pedidos do cliente: {e}")
-            return []
+        orders = self.db.collection("orders").where("id_cliente", "==", id_cliente).stream()
+        enriched = []
+        for doc in orders:
+            order = doc.to_dict()
+            restaurante_doc = self.db.collection("restaurants").document(str(order.get("id_restaurante"))).get()
+            order["nome_restaurante"] = restaurante_doc.to_dict().get("nome") if restaurante_doc.exists else None
+            enriched.append(order)
+        return enriched
 
-    # MODIFICADO: Aplicado o 'with' statement
     def get_payment_methods(self):
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                cursor.execute("SELECT id_forma_pagamento, descricao AS formaPag FROM forma_pagamento")
-                return cursor.fetchall()
-        except mysql.connector.Error as e:
-            print(f"Erro ao buscar formas de pagamento: {e}")
-            return []
+        methods = [doc.to_dict() for doc in self.db.collection("payment_methods").stream()]
+        if not methods:
+            return [
+                {"id_forma_pagamento": 1, "formaPag": "Dinheiro"},
+                {"id_forma_pagamento": 2, "formaPag": "Cartão de Crédito"},
+                {"id_forma_pagamento": 3, "formaPag": "PIX"},
+            ]
+        return methods
 
-    # MODIFICADO: Aplicado o 'with' statement
     def get_client_addresses(self, cliente_id):
-        """Busca todos os endereços de um cliente."""
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                # MODIFICADO: Adicionado cidade, estado e cep à consulta
-                query = """
-                    SELECT endereco_id, rua, num, bairro, cep 
-                    FROM enderecos_entrega 
-                    WHERE cliente_id = %s
-                """
-                cursor.execute(query, (cliente_id,))
-                return cursor.fetchall()
-        except mysql.connector.Error as e:
-            print(f"Erro ao buscar endereços: {e}")
-            return []
-        
-    
+        addresses = self.db.collection("client_addresses").where("cliente_id", "==", cliente_id).stream()
+        return [doc.to_dict() for doc in addresses]
+
     def get_address_details(self, endereco_id):
-        """Busca os detalhes de um endereço específico."""
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                cursor.execute("SELECT * FROM enderecos_entrega WHERE endereco_id = %s", (endereco_id,))
-                return cursor.fetchone()
-        except mysql.connector.Error as e:
-            print(f"Erro ao buscar detalhes do endereço: {e}")
-            return None
+        doc = self.db.collection("client_addresses").document(str(endereco_id)).get()
+        return doc.to_dict() if doc.exists else None
 
     def update_client_address(self, endereco_id, endereco):
-        """Atualiza um endereço de entrega existente."""
         try:
-            with self.connection.cursor() as cursor:
-                query = """
-                    UPDATE enderecos_entrega SET rua=%s, num=%s, bairro=%s, cidade=%s, estado=%s, cep=%s
-                    WHERE endereco_id = %s
-                """
-                cursor.execute(query, (endereco['rua'], endereco['num'], endereco['bairro'], 
-                                       endereco['cidade'], endereco['estado'], endereco['cep'], endereco_id))
-                self.connection.commit()
-                return True
-        except mysql.connector.Error as e:
+            self.db.collection("client_addresses").document(str(endereco_id)).update(
+                {
+                    "rua": endereco["rua"],
+                    "num": endereco["num"],
+                    "bairro": endereco["bairro"],
+                    "cidade": endereco["cidade"],
+                    "estado": endereco["estado"],
+                    "cep": endereco["cep"],
+                }
+            )
+            return True
+        except Exception as e:
             print(f"Erro ao atualizar endereço do cliente: {e}")
-            self.connection.rollback()
             return False
 
     def delete_client_address(self, endereco_id):
-        """Exclui um endereço de entrega."""
         try:
-            with self.connection.cursor() as cursor:
-                cursor.execute("DELETE FROM enderecos_entrega WHERE endereco_id = %s", (endereco_id,))
-                self.connection.commit()
-                return True
-        except mysql.connector.Error as e:
+            self.db.collection("client_addresses").document(str(endereco_id)).delete()
+            return True
+        except Exception as e:
             print(f"Erro ao excluir endereço: {e}")
-            self.connection.rollback()
             return False
 
-    # MODIFICADO: Aplicado o 'with' statement
     def add_client_address(self, cliente_id, rua, num, bairro, cidade, estado, cep):
-        try:
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO enderecos_entrega (cliente_id, rua, num, bairro, cidade, estado, cep) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                    (cliente_id, rua, num, bairro, cidade, estado, cep)
-                )
-                self.connection.commit()
-                return cursor.lastrowid
-        except mysql.connector.Error as e:
-            print(f"Erro ao adicionar endereço: {e}")
-            self.connection.rollback()
-            return None
+        endereco_id = self._next_id("enderecos_entrega")
+        self.db.collection("client_addresses").document(str(endereco_id)).set(
+            {
+                "endereco_id": endereco_id,
+                "cliente_id": cliente_id,
+                "rua": rua,
+                "num": num,
+                "bairro": bairro,
+                "cidade": cidade,
+                "estado": estado,
+                "cep": cep,
+            }
+        )
+        return endereco_id
 
-    # MODIFICADO: Aplicado o 'with' statement
     def get_restaurant_categories(self, id_restaurante):
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                cursor.execute("SELECT categoria_id, nome_categoria FROM categoria_pratos WHERE id_restaurante = %s", (id_restaurante,))
-                return cursor.fetchall()
-        except mysql.connector.Error as e:
-            print(f"Erro ao buscar categorias: {e}")
-            return []
+        categories = self.db.collection("restaurant_categories").where("id_restaurante", "==", id_restaurante).stream()
+        return [doc.to_dict() for doc in categories]
 
-    # MODIFICADO: Aplicado o 'with' statement
     def get_dish_details(self, id_prato):
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                # MODIFICADO: Adicionado 'categoria_id' à consulta
-                query = "SELECT id_prato, nome_prato, descricao, preco, status_disp, categoria_id FROM pratos WHERE id_prato = %s"
-                cursor.execute(query, (id_prato,))
-                return cursor.fetchone()
-        except mysql.connector.Error as e:
-            print(f"Erro ao buscar detalhes do prato: {e}")
-            return None
+        doc = self.db.collection("dishes").document(str(id_prato)).get()
+        return doc.to_dict() if doc.exists else None
 
-    # MODIFICADO: Aplicado o 'with' statement
-    def edit_dish(self, id_prato, nome, descricao, preco, categoria_id): # MODIFICADO: adicionado categoria_id
-        """Atualiza as informações de um prato existente, incluindo a categoria."""
+    def edit_dish(self, id_prato, nome, descricao, preco, categoria_id):
         try:
-            with self.connection.cursor() as cursor:
-                # MODIFICADO: adicionado categoria_id ao UPDATE
-                query = """
-                    UPDATE pratos 
-                    SET nome_prato = %s, descricao = %s, preco = %s, categoria_id = %s 
-                    WHERE id_prato = %s
-                """
-                cursor.execute(query, (nome, descricao, preco, categoria_id, id_prato))
-                self.connection.commit()
-                return True
-        except mysql.connector.Error as e:
+            self.db.collection("dishes").document(str(id_prato)).update(
+                {
+                    "nome_prato": nome,
+                    "descricao": descricao,
+                    "preco": float(preco),
+                    "categoria_id": categoria_id,
+                }
+            )
+            return True
+        except Exception as e:
             print(f"Erro ao editar o prato: {e}")
-            self.connection.rollback()
             return False
 
-    # MODIFICADO: Aplicado o 'with' statement
     def update_dish_availability(self, id_prato, is_available):
         try:
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    "UPDATE pratos SET status_disp = %s WHERE id_prato = %s",
-                    (is_available, id_prato)
-                )
-                self.connection.commit()
-                return True
-        except mysql.connector.Error as e:
+            self.db.collection("dishes").document(str(id_prato)).update({"status_disp": is_available})
+            return True
+        except Exception as e:
             print(f"Erro ao alterar disponibilidade do prato: {e}")
-            self.connection.rollback()
             return False
-        
+
     def get_restaurant_details(self, restaurante_id):
-        """Busca todos os detalhes de um restaurante, incluindo o endereço E A MÉDIA DE AVALIAÇÕES."""
-        try:
-            with self.connection.cursor(dictionary=True) as cursor:
-                # Adicionamos a chamada para a função fn_media_avaliacao aqui também
-                query = """
-                    SELECT 
-                        r.*, 
-                        e.rua, e.num, e.bairro, e.cidade, e.estado, e.cep,
-                        fn_media_avaliacao(r.id_restaurante) AS media_avaliacoes
-                    FROM restaurante AS r
-                    JOIN enderecos_restaurante AS e ON r.id_end_rest = e.id_end_rest
-                    WHERE r.id_restaurante = %s
-                """
-                cursor.execute(query, (restaurante_id,))
-                return cursor.fetchone()
-        except mysql.connector.Error as e:
-            print(f"Erro ao buscar detalhes do restaurante: {e}")
+        restaurante_doc = self.db.collection("restaurants").document(str(restaurante_id)).get()
+        if not restaurante_doc.exists:
             return None
+        restaurante = restaurante_doc.to_dict()
+        endereco_doc = self.db.collection("restaurant_addresses").document(str(restaurante["id_end_rest"])) .get()
+        if endereco_doc.exists:
+            restaurante.update(endereco_doc.to_dict())
+        restaurante["media_avaliacoes"] = self._calculate_average_rating(restaurante_id)
+        return restaurante
 
     def update_restaurant_details(self, restaurante_id, nome, telefone, tipo_culinaria, taxa_entrega, tempo_estimado):
-        """Atualiza os dados principais de um restaurante."""
         try:
-            with self.connection.cursor() as cursor:
-                query = """
-                    UPDATE restaurante SET nome=%s, telefone=%s, tipo_culinaria=%s, 
-                                           taxa_entrega=%s, tempo_entrega_estimado=%s
-                    WHERE id_restaurante = %s
-                """
-                cursor.execute(query, (nome, telefone, tipo_culinaria, taxa_entrega, tempo_estimado, restaurante_id))
-                self.connection.commit()
-                return True
-        except mysql.connector.Error as e:
+            self.db.collection("restaurants").document(str(restaurante_id)).update(
+                {
+                    "nome": nome,
+                    "telefone": telefone,
+                    "tipo_culinaria": tipo_culinaria,
+                    "taxa_entrega": float(taxa_entrega),
+                    "tempo_entrega_estimado": tempo_estimado,
+                }
+            )
+            return True
+        except Exception as e:
             print(f"Erro ao atualizar detalhes do restaurante: {e}")
-            self.connection.rollback()
             return False
 
     def update_restaurant_address(self, id_end_rest, endereco):
-        """Atualiza o endereço de um restaurante."""
         try:
-            with self.connection.cursor() as cursor:
-                query = """
-                    UPDATE enderecos_restaurante SET rua=%s, num=%s, bairro=%s, cidade=%s, estado=%s, cep=%s
-                    WHERE id_end_rest = %s
-                """
-                cursor.execute(query, (endereco['rua'], endereco['num'], endereco['bairro'], 
-                                       endereco['cidade'], endereco['estado'], endereco['cep'], id_end_rest))
-                self.connection.commit()
-                return True
-        except mysql.connector.Error as e:
+            self.db.collection("restaurant_addresses").document(str(id_end_rest)).update(
+                {
+                    "rua": endereco["rua"],
+                    "num": endereco["num"],
+                    "bairro": endereco["bairro"],
+                    "cidade": endereco["cidade"],
+                    "estado": endereco["estado"],
+                    "cep": endereco["cep"],
+                }
+            )
+            return True
+        except Exception as e:
             print(f"Erro ao atualizar endereço do restaurante: {e}")
-            self.connection.rollback()
             return False
 
     # -------------------- FECHAR CONEXÃO --------------------
     def close(self):
-        if self.connection and self.connection.is_connected():
-            self.connection.close()
-            print("Conexão com o banco de dados fechada.")
+        pass
 
     def __del__(self):
         self.close()

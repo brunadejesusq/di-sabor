@@ -73,18 +73,18 @@ Siga os passos abaixo para configurar e rodar a aplicação em seu ambiente loca
     ```
 
 3.  **Instale as dependências:**
-    A aplicação precisa de bibliotecas como `Flask`, `Flask-SocketIO`, `mysql-connector-python`, entre outras. Instale elas com os seguintes comandos:
+    A aplicação agora precisa do SDK Firebase e do Firestore. Instale com os comandos:
 
     ```bash
     pip install Flask
     pip install Flask-SocketIO
-    pip install mysql-connector-python
+    pip install firebase-admin
     pip install pytz
     pip install eventlet
     ```
 
 4.  **Configure a Conexão com o Banco de Dados:**
-    A aplicação se conecta a um banco de dados MySQL hospedado no site Railway. No nosso caso, já está configurado com as credenciais corretas para o banco em nuvem no arquivo `my.cnf`
+    A aplicação agora usa Firebase Firestore. Crie ou obtenha o arquivo de credenciais do Firebase e salve-o como `firebase_credentials.json` no diretório `di-sabor`, ou defina a variável de ambiente `FIREBASE_CREDENTIALS` com o caminho para o arquivo.
 
 ### 2\. Executando a Aplicação
 
