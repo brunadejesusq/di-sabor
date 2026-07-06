@@ -1,17 +1,28 @@
 import mysql.connector
 import sys
+import os
 from datetime import datetime
 import pytz
 
 class DatabaseManager:
     def __init__(self):
+        # Garante que a instância sempre terá o atributo mesmo se a conexão falhar
+        self.connection = None
         try:
-            self.connection = mysql.connector.connect(option_files="my.cnf")
+            # Usa o my.cnf localizado no mesmo diretório do módulo para evitar problemas de cwd
+            cfg_path = os.path.join(os.path.dirname(__file__), "my.cnf")
+            if not os.path.exists(cfg_path):
+                raise FileNotFoundError(f"Arquivo de configuração de DB não encontrado: {cfg_path}")
+
+            # timeout curto para falhar rápido em caso de problemas de rede
+            self.connection = mysql.connector.connect(option_files=cfg_path, connection_timeout=10)
             # MODIFICADO: Removido self.cursor daqui, pois cada função gerenciará o seu.
             print(f"Conexão MySQL aberta com sucesso! ID: {self.connection.connection_id}")
         except mysql.connector.Error as e:
-            print(f"Erro ao conectar ao MySQL: {e}")
-            sys.exit(1)
+            print(f"Erro ao conectar ao MySQL: {e}\nVerifique rede, porta e credenciais no my.cnf.")
+            # Não faz exit imediato para permitir tratamento pelo caller
+        except FileNotFoundError as e:
+            print(e)
 
     # -------------------- CLIENTE --------------------
     # MODIFICADO: Aplicado o 'with' statement e hashing de senha
