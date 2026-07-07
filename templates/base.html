@@ -7,13 +7,16 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <title>{% block title %}Delivery App{% endblock %}</title>
+    <title>{% block title %}Di Sabor Caseiro{% endblock %}</title>
 </head>
 <body>
 
     <header>
         <nav class="navbar">
-            <a href="{{ url_for('index') }}" class="navbar-brand">DeliveryApp</a>
+            <a href="{{ url_for('index') }}" class="navbar-brand">
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="Di Sabor Caseiro" class="navbar-logo">
+                Di Sabor Caseiro
+            </a>
             <div class="navbar-menu">
                 {% if session['user_id'] %}
                     {% if not session['is_restaurante'] %}

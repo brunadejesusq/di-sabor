@@ -16,7 +16,7 @@ app.secret_key = os.urandom(24)
 db = DatabaseManager()
 
 # INICIALIZAÇÃO DO SOCKET.IO
-socketio = SocketIO(app)
+socketio = SocketIO(app, async_mode='threading')
 
 # --- ROTAS DE AUTENTICAÇÃO E CADASTRO ---
 
@@ -711,4 +711,4 @@ def handle_leave_menu_room(data):
 
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    socketio.run(app, debug=True, use_reloader=False)

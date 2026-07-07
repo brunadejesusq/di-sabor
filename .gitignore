@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*~
+
+# Virtual environment
+venv/
+.venv/
+
+# Firebase credentials
+firebase_credentials.json
+
+# OS files
+.DS_Store
+Thumbs.db
