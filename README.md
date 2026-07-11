@@ -124,18 +124,21 @@ O projeto foi dividido em três aplicações separadas:
     ```bash
     python customer_app.py
     ```
+    Acesse: http://127.0.0.1:5000
 
     ou
 
     ```bash
     python restaurant_app.py
     ```
+    Acesse: http://127.0.0.1:5001
 
     ou
 
     ```bash
     python delivery_app.py
     ```
+    Acesse: http://127.0.0.1:5002
 
 7.  **Alternativa no Windows:**
 

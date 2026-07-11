@@ -21,7 +21,7 @@ def index():
             flash('Use o aplicativo de restaurante para entrar como restaurante.', 'danger')
             return redirect(url_for('logout'))
         return redirect(url_for('painel_cliente'))
-    return redirect(url_for('login'))
+    return render_template('login.html', register_endpoint='cadastro_cliente')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -292,4 +292,4 @@ def meus_enderecos():
     return render_template('meus_enderecos.html', enderecos=enderecos)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5000)

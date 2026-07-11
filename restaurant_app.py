@@ -15,124 +15,76 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = os.urandom(24)
 db = DatabaseManager()
 
-def get_or_create_default_restaurant():
-    restaurant = db.get_restaurant_by_name('Di Sabor Caseiro')
+DEFAULT_RESTAURANT = {
+    'usuario': 'di-sabor-caseiro',
+    'email': 'contato@disaborcaseiro.com',
+    'senha': 'di-sabor',
+    'nome': 'Di Sabor Caseiro',
+    'telefone': '(11) 99999-9999',
+    'tipo_culinaria': 'Brasileira',
+    'taxa_entrega': '5.00',
+    'tempo_estimado': '45 minutos',
+    'endereco': {
+        'rua': 'Rua Principal',
+        'num': '123',
+        'bairro': 'Centro',
+        'cidade': 'São Paulo',
+        'estado': 'SP',
+        'cep': '01000-000',
+    },
+}
+
+
+def ensure_default_restaurant():
+    restaurant = db.get_restaurant_by_name(DEFAULT_RESTAURANT['nome'])
     if restaurant:
         return restaurant
 
-    default_data = {
-        'usuario': 'di-sabor-caseiro',
-        'email': 'contato@disaborcaseiro.com',
-        'senha': 'di-sabor',
-        'nome': 'Di Sabor Caseiro',
-        'telefone': '(11) 99999-9999',
-        'tipo_culinaria': 'Brasileira',
-        'taxa_entrega': '5.00',
-        'tempo_estimado': '45 minutos',
-        'endereco': {
-            'rua': 'Rua Principal',
-            'num': '123',
-            'bairro': 'Centro',
-            'cidade': 'São Paulo',
-            'estado': 'SP',
-            'cep': '01000-000',
-        },
-    }
-
     novo_restaurante_data = db.create_restaurant(
-        default_data['usuario'],
-        default_data['email'],
-        default_data['senha'],
-        default_data['nome'],
-        default_data['telefone'],
-        default_data['tipo_culinaria'],
-        default_data['endereco'],
-        default_data['taxa_entrega'],
-        default_data['tempo_estimado'],
+        DEFAULT_RESTAURANT['usuario'],
+        DEFAULT_RESTAURANT['email'],
+        DEFAULT_RESTAURANT['senha'],
+        DEFAULT_RESTAURANT['nome'],
+        DEFAULT_RESTAURANT['telefone'],
+        DEFAULT_RESTAURANT['tipo_culinaria'],
+        DEFAULT_RESTAURANT['endereco'],
+        DEFAULT_RESTAURANT['taxa_entrega'],
+        DEFAULT_RESTAURANT['tempo_estimado'],
     )
 
     if not novo_restaurante_data:
         return None
 
-    return db.get_restaurant_by_name('Di Sabor Caseiro')
+    return db.get_restaurant_by_name(DEFAULT_RESTAURANT['nome'])
 
-
-def set_default_restaurant_session():
-    if 'user_id' in session and session.get('is_restaurante'):
-        return True
-    restaurant = db.get_or_create_default_restaurant() if hasattr(db, 'get_or_create_default_restaurant') else None
-    if not restaurant:
-        restaurant = get_or_create_default_restaurant()
-    if not restaurant:
-        return False
-    session['user_id'] = restaurant['usuario_id']
-    session['is_restaurante'] = True
-    session['restaurante_id'] = restaurant['id_restaurante']
-    session['cliente_id'] = None
-    return True
-
-@app.route('/login')
-def login():
-    return redirect(url_for('index'))
 
 @app.route('/')
 def index():
-    try:
-        if not set_default_restaurant_session():
-            flash('Nenhum restaurante cadastrado. Cadastre um restaurante primeiro.', 'danger')
-            return redirect(url_for('cadastro_restaurante'))
-        return redirect(url_for('painel_restaurante'))
-    except exceptions.NotFound:
-        error_message = (
-            'Banco Firestore não encontrado para este projeto. ' 
-            'Verifique se o Firestore está configurado no console do Firebase e se as credenciais estão corretas.'
-        )
-        flash(error_message, 'danger')
-        return render_template('error.html', error_message=error_message)
-    except Exception as e:
-        error_message = f'Erro ao conectar com o banco de dados: {e}'
-        flash(error_message, 'danger')
-        return render_template('error.html', error_message=error_message)
+    return redirect(url_for('painel_restaurante'))
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    ensure_default_restaurant()
+    if request.method == 'POST':
+        usuario = request.form['username']
+        senha = request.form['password']
+        user_data = db.login_user(usuario, senha)
+        if user_data and user_data.get('is_restaurante'):
+            session['user_id'] = user_data['usuario_id']
+            session['is_restaurante'] = True
+            session['restaurante_id'] = user_data['restaurante_id']
+            session['cliente_id'] = None
+            return redirect(url_for('painel_restaurante'))
+        flash('Usuário ou senha inválidos para restaurante.', 'danger')
+    return render_template('restaurant_login.html')
+
 
 @app.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('index'))
+    return redirect(url_for('login'))
 
-@app.route('/pre_cadastro')
-def pre_cadastro():
-    return render_template('cadastro_restaurante.html')
-
-@app.route('/cadastro_restaurante', methods=['GET', 'POST'])
-def cadastro_restaurante():
-    if request.method == 'POST':
-        usuario = request.form['usuario']
-        email = request.form['email']
-        senha = request.form['senha']
-        nome = request.form['nome']
-        telefone = request.form['telefone']
-        tipo_culinaria = request.form['tipo_culinaria']
-        taxa_entrega = request.form['taxa_entrega']
-        tempo_estimado = request.form['tempo_estimado']
-        endereco = {
-            'rua': request.form['rua'],
-            'num': request.form['num'],
-            'bairro': request.form['bairro'],
-            'cidade': request.form['cidade'],
-            'estado': request.form['estado'],
-            'cep': request.form['cep'],
-        }
-        novo_restaurante_data = db.create_restaurant(usuario, email, senha, nome, telefone, tipo_culinaria, endereco, taxa_entrega, tempo_estimado)
-        if novo_restaurante_data:
-            session['user_id'] = novo_restaurante_data['usuario_id']
-            session['is_restaurante'] = True
-            session['restaurante_id'] = novo_restaurante_data['restaurante_id']
-            session['cliente_id'] = None
-            flash('Restaurante cadastrado com sucesso!', 'success')
-            return redirect(url_for('restaurante_horarios'))
-        flash('Erro ao cadastrar restaurante.', 'danger')
-        return redirect(url_for('cadastro_restaurante'))
-    return render_template('cadastro_restaurante.html')
 
 @app.route('/painel_restaurante')
 def painel_restaurante():
@@ -287,4 +239,4 @@ def restaurante_rotas():
     return render_template('restaurante_rotas.html', rotas=[])
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5001)

@@ -47,4 +47,4 @@ def rota_detalhes(rota_id):
     return render_template('delivery_route.html', rota=rota)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5002)
