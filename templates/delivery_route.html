@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}Detalhes da Rota{% endblock %}
+
+{% block content %}
+<div class="form-wrapper">
+    <h1>Detalhes da Rota</h1>
+    <p><strong>Rota:</strong> {{ rota.descricao }}</p>
+    <p><strong>Status:</strong> {{ rota.status }}</p>
+    <p>Em breve você poderá atualizar o status e ver o mapa da entrega.</p>
+</div>
+{% endblock %}

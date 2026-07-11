@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Estoque do Restaurante{% endblock %}
+
+{% block content %}
+<div class="form-wrapper">
+    <h1>Controle de Estoque</h1>
+    <p>A tela de estoque ainda está em construção. Aqui você poderá ver e atualizar o estoque dos produtos.</p>
+    <ul>
+        {% for produto in produtos %}
+            <li>{{ produto.nome_produto }} - Quantidade: {{ produto.estoque }}</li>
+        {% else %}
+            <li>Nenhum produto cadastrado.</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}

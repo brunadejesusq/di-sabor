@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Rotas de Entrega{% endblock %}
+
+{% block content %}
+<div class="form-wrapper">
+    <h1>Rotas de Entrega</h1>
+    <p>Este espaço é para gerenciamento das rotas de entrega do restaurante.</p>
+    <ul>
+        {% for rota in rotas %}
+            <li>{{ rota.descricao }} - {{ rota.status }}</li>
+        {% else %}
+            <li>Sem rotas cadastradas no momento.</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}

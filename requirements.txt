@@ -1,5 +1,3 @@
 Flask
-Flask-SocketIO
-firebase-admin
+mysql-connector-python
 pytz
-eventlet

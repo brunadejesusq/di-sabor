@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard de Entregas{% endblock %}
+
+{% block content %}
+<div class="form-wrapper">
+    <h1>Dashboard de Entregas</h1>
+    <p>Bem-vindo, {{ session.entregador_nome }}.</p>
+    <div class="card">
+        <h2>Rotas Atuais</h2>
+        <ul>
+            {% for rota in rotas %}
+            <li>
+                <a href="{{ url_for('rota_detalhes', rota_id=rota.rota_id) }}">{{ rota.descricao }}</a>
+                - {{ rota.status }}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endblock %}

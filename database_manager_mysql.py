@@ -346,6 +346,26 @@ class DatabaseManager:
             print(f"Erro ao buscar restaurantes: {e}")
             return []
 
+    def get_restaurant_by_name(self, nome_restaurante):
+        try:
+            with self.connection.cursor(dictionary=True) as cursor:
+                query = """
+                    SELECT 
+                        id_restaurante,
+                        nome,
+                        tipo_culinaria,
+                        taxa_entrega,
+                        tempo_entrega_estimado,
+                        fn_media_avaliacao(id_restaurante) AS media_avaliacoes
+                    FROM restaurante
+                    WHERE nome = %s
+                """
+                cursor.execute(query, (nome_restaurante,))
+                return cursor.fetchone()
+        except mysql.connector.Error as e:
+            print(f"Erro ao buscar restaurante por nome: {e}")
+            return None
+
     # MODIFICADO: Aplicado o 'with' statement
     def get_restaurant_menu(self, id_restaurante):
         """Busca o cardápio de um restaurante PARA O CLIENTE, trazendo apenas pratos disponíveis."""
