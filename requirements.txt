@@ -1,3 +1,4 @@
 Flask
-mysql-connector-python
+firebase-admin
+google-cloud-firestore
 pytz

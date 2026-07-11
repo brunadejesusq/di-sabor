@@ -8,6 +8,9 @@ __pycache__/
 venv/
 .venv/
 
+# Firebase credentials
+firebase_credentials.json
+
 # OS files
 .DS_Store
 Thumbs.db

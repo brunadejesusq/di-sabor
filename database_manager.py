@@ -328,6 +328,24 @@ class DatabaseManager:
         )
         return categoria_id
 
+    # -------------------- ENTREGADORES E ROTAS --------------------
+    def driver_login(self, usuario, senha):
+        driver_query = self.db.collection("drivers").where("usuario", "==", usuario).limit(1).get()
+        if not driver_query:
+            return None
+        driver = driver_query[0].to_dict()
+        if driver.get("senha") != senha:
+            return None
+        return driver
+
+    def get_routes_for_driver(self, id_entregador):
+        routes = [doc.to_dict() for doc in self.db.collection("delivery_routes").where("id_entregador", "==", id_entregador).stream()]
+        return routes
+
+    def get_route_details(self, rota_id):
+        doc = self.db.collection("delivery_routes").document(str(rota_id)).get()
+        return doc.to_dict() if doc.exists else None
+
     def add_dish(self, categoria_id, nome_prato, descricao, preco):
         categoria_doc = self.db.collection("restaurant_categories").document(str(categoria_id)).get()
         if not categoria_doc.exists:
@@ -487,6 +505,17 @@ class DatabaseManager:
         except Exception as e:
             print(f"Erro ao alterar disponibilidade do prato: {e}")
             return False
+
+    def get_restaurant_by_name(self, nome_restaurante):
+        query = self.db.collection("restaurants").where("nome", "==", nome_restaurante).limit(1).get()
+        if not query:
+            return None
+        restaurante = query[0].to_dict()
+        endereco_doc = self.db.collection("restaurant_addresses").document(str(restaurante["id_end_rest"])) .get()
+        if endereco_doc.exists:
+            restaurante.update(endereco_doc.to_dict())
+        restaurante["media_avaliacoes"] = self._calculate_average_rating(restaurante["id_restaurante"])
+        return restaurante
 
     def get_restaurant_details(self, restaurante_id):
         restaurante_doc = self.db.collection("restaurants").document(str(restaurante_id)).get()

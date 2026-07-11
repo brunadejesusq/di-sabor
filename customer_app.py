@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from enum import Enum
-from database_manager_mysql import DatabaseManager
+from database_manager import DatabaseManager
 import os
 
 class StatusPedido(Enum):

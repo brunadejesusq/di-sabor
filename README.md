@@ -47,13 +47,13 @@ A plataforma simula um serviço de delivery de comida, permitindo que usuários 
   * **Backend:**
       * **Python 3:** Linguagem de programação principal.
       * **Flask:** Micro-framework web para a criação das rotas e lógica da aplicação.
+      * **Firebase Admin SDK:** Conexão com o backend do Firebase.
   * **Frontend:**
       * **HTML5:** Estrutura das páginas.
       * **CSS3:** Estilização e design.
       * **JavaScript:** Interatividade e navegação no cliente.
   * **Banco de Dados:**
-      * **MySQL:** Sistema de gerenciamento de banco de dados relacional.
-      * **Railway:** Plataforma de nuvem para hospedagem do banco de dados MySQL.
+      * **Google Firestore:** Banco de documentos usado para armazenar dados da aplicação.
 
 -----
 
@@ -69,13 +69,13 @@ O projeto foi dividido em três aplicações separadas:
 - `restaurant_app.py`: site de gerenciamento do restaurante, com pedidos, cardápio, horários e páginas de estoque/rotas para evoluir.
 - `delivery_app.py`: app de motoboy para visualizar rotas de entrega e atualizar status de entregas.
 
-> Nota: arquivos legados (`app.py`, `main.py`, `database_manager.py`) não fazem parte do fluxo atual com MySQL e foram realocados para manter o projeto concentrado nos três apps principais.
+> Nota: arquivos legados (`app.py`, `main.py`, `database_manager_mysql.py`) não fazem parte do fluxo atual e foram deixados apenas para referência histórica. Os três apps principais usam `database_manager.py` com Firebase.
 
 ### 1\. Pré-requisitos
 
   * Python 3.x instalado.
-  * Dependências (estão abaixo).
-  * Instalar `mysql-connector-python` para conexão com MySQL.
+  * Dependências listadas em `requirements.txt`.
+  * Conta Firebase com projeto e credenciais de serviço.
 
 2.  **Crie e ative um ambiente virtual:**
 
@@ -90,17 +90,70 @@ O projeto foi dividido em três aplicações separadas:
     ```
 
 3.  **Instale as dependências:**
-    O projeto usa Flask com MySQL. Instale com:
+    O projeto usa Flask com Firebase. Instale com:
 
     ```bash
     pip install -r requirements.txt
     ```
 
-4.  **Configure a Conexão com o Banco de Dados:**
-    Atualize o arquivo `my.cnf` com as credenciais do seu MySQL local ou remoto.
-    Certifique-se de que o banco de dados esteja acessível e que as tabelas estejam criadas a partir de `restaurante.sql`.
+4.  **Configure a conexão com o Firebase:**
+    Coloque o arquivo de credenciais do Firebase `firebase_credentials.json` na raiz do projeto,
+    ou defina a variável de ambiente `FIREBASE_CREDENTIALS` apontando para o caminho do arquivo.
+    
+    Exemplo no Windows:
 
-### 2\. Executando a Aplicação
+    ```powershell
+    setx FIREBASE_CREDENTIALS "C:\caminho\para\firebase_credentials.json"
+    ```
+
+    Exemplo no Linux/macOS:
+
+    ```bash
+    export FIREBASE_CREDENTIALS="/caminho/para/firebase_credentials.json"
+    ```
+
+5.  **Verifique se as credenciais estão acessíveis:**
+
+    - `firebase_credentials.json` deve existir na pasta do projeto, ou
+    - `FIREBASE_CREDENTIALS` deve apontar para o arquivo JSON válido.
+
+6.  **Execute o app desejado:**
+
+    ```bash
+    python customer_app.py
+    ```
+
+    ou
+
+    ```bash
+    python restaurant_app.py
+    ```
+
+    ou
+
+    ```bash
+    python delivery_app.py
+    ```
+
+7.  **Alternativa no Windows:**
+
+    ```powershell
+    .\run_app.ps1 -App customer -CredentialsPath "C:\caminho\para\firebase_credentials.json"
+    ```
+
+    ```powershell
+    .\run_app.ps1 -App restaurant
+    ```
+
+    ```powershell
+    .\run_app.ps1 -App delivery
+    ```
+
+Abra seu navegador e acesse [http://127.0.0.1:5000](http://127.0.0.1:5000) para usar a aplicação.
+
+-----
+
+## Autores
 
 Com o ambiente configurado, inicie o servidor Flask com um dos apps:
 
