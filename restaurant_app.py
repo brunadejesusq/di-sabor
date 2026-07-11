@@ -60,37 +60,27 @@ def ensure_default_restaurant():
 
 @app.route('/')
 def index():
-    return redirect(url_for('painel_restaurante'))
-
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    ensure_default_restaurant()
-    if request.method == 'POST':
-        usuario = request.form['username']
-        senha = request.form['password']
-        user_data = db.login_user(usuario, senha)
-        if user_data and user_data.get('is_restaurante'):
-            session['user_id'] = user_data['usuario_id']
-            session['is_restaurante'] = True
-            session['restaurante_id'] = user_data['restaurante_id']
-            session['cliente_id'] = None
-            return redirect(url_for('painel_restaurante'))
-        flash('Usuário ou senha inválidos para restaurante.', 'danger')
-    return render_template('restaurant_login.html')
+    restaurant = ensure_default_restaurant()
+    if restaurant:
+        session['user_id'] = restaurant.get('usuario_id')
+        session['is_restaurante'] = True
+        session['restaurante_id'] = restaurant.get('id_restaurante')
+        session['cliente_id'] = None
+        return redirect(url_for('painel_restaurante'))
+    return 'Erro ao iniciar o restaurante padrão.', 500
 
 
 @app.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('login'))
+    return redirect(url_for('index'))
 
 
 @app.route('/painel_restaurante')
 def painel_restaurante():
     if 'user_id' not in session or not session.get('is_restaurante'):
         flash('Acesso negado.', 'danger')
-        return redirect(url_for('login'))
+        return redirect(url_for('index'))
     id_restaurante = session['restaurante_id']
     pedidos = db.get_orders_for_restaurant(id_restaurante)
     restaurante_info = db.get_restaurant_details(id_restaurante)
@@ -99,7 +89,7 @@ def painel_restaurante():
 @app.route('/painel_restaurante/cardapio')
 def restaurante_cardapio():
     if 'user_id' not in session or not session.get('is_restaurante'):
-        return redirect(url_for('login'))
+        return redirect(url_for('index'))
     id_restaurante = session['restaurante_id']
     menu = db.get_full_restaurant_menu_for_admin(id_restaurante)
     return render_template('restaurante_cardapio.html', menu=menu)
@@ -107,7 +97,7 @@ def restaurante_cardapio():
 @app.route('/painel_restaurante/categoria/adicionar', methods=['POST'])
 def adicionar_categoria():
     if 'user_id' not in session or not session.get('is_restaurante'):
-        return redirect(url_for('login'))
+        return redirect(url_for('index'))
     nome_categoria = request.form.get('nome_categoria')
     if nome_categoria:
         db.add_dish_category(session['restaurante_id'], nome_categoria)
@@ -119,7 +109,7 @@ def adicionar_categoria():
 @app.route('/painel_restaurante/prato/adicionar', methods=['GET', 'POST'])
 def adicionar_prato():
     if 'user_id' not in session or not session.get('is_restaurante'):
-        return redirect(url_for('login'))
+        return redirect(url_for('index'))
     id_restaurante = session['restaurante_id']
     if request.method == 'POST':
         categoria_id = request.form.get('categoria_id')
@@ -135,7 +125,7 @@ def adicionar_prato():
 @app.route('/painel_restaurante/prato/editar/<int:prato_id>', methods=['GET', 'POST'])
 def editar_prato(prato_id):
     if 'user_id' not in session or not session.get('is_restaurante'):
-        return redirect(url_for('login'))
+        return redirect(url_for('index'))
     id_restaurante = session['restaurante_id']
     if request.method == 'POST':
         nome = request.form.get('nome_prato')
@@ -156,7 +146,7 @@ def editar_prato(prato_id):
 @app.route('/painel_restaurante/endereco', methods=['GET', 'POST'])
 def restaurante_endereco():
     if 'user_id' not in session or not session.get('is_restaurante'):
-        return redirect(url_for('login'))
+        return redirect(url_for('index'))
     id_restaurante = session['restaurante_id']
     restaurante = db.get_restaurant_details(id_restaurante)
     if request.method == 'POST':
@@ -177,7 +167,7 @@ def restaurante_endereco():
 @app.route('/painel_restaurante/horarios', methods=['GET', 'POST'])
 def restaurante_horarios():
     if 'user_id' not in session or not session.get('is_restaurante'):
-        return redirect(url_for('login'))
+        return redirect(url_for('index'))
     id_restaurante = session['restaurante_id']
     if request.method == 'POST':
         horarios = {}
@@ -208,7 +198,7 @@ def restaurante_horarios():
 @app.route('/pedido/atualizar_status/<int:pedido_id>', methods=['POST'])
 def atualizar_status_pedido(pedido_id):
     if 'user_id' not in session or not session.get('is_restaurante'):
-        return redirect(url_for('login'))
+        return redirect(url_for('index'))
     novo_status = request.form.get('status')
     if novo_status:
         db.update_order_status(pedido_id, novo_status)
@@ -218,7 +208,7 @@ def atualizar_status_pedido(pedido_id):
 @app.route('/painel_restaurante/avaliacoes')
 def restaurante_avaliacoes():
     if 'user_id' not in session or not session.get('is_restaurante'):
-        return redirect(url_for('login'))
+        return redirect(url_for('index'))
     avaliacoes = db.get_reviews_for_restaurant(session['restaurante_id'])
     restaurante_info = db.get_restaurant_details(session['restaurante_id'])
     media = restaurante_info['media_avaliacoes'] if restaurante_info else 0
@@ -227,14 +217,14 @@ def restaurante_avaliacoes():
 @app.route('/painel_restaurante/estoque')
 def restaurante_estoque():
     if 'user_id' not in session or not session.get('is_restaurante'):
-        return redirect(url_for('login'))
+        return redirect(url_for('index'))
     # A gestão de estoque precisa ser adicionada ao banco de dados.
     return render_template('restaurante_estoque.html', produtos=[])
 
 @app.route('/painel_restaurante/rotas')
 def restaurante_rotas():
     if 'user_id' not in session or not session.get('is_restaurante'):
-        return redirect(url_for('login'))
+        return redirect(url_for('index'))
     # Rotas e entregadores serão adicionados como próxima camada de evolução.
     return render_template('restaurante_rotas.html', rotas=[])
 
