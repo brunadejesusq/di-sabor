@@ -22,8 +22,8 @@ db = DatabaseManager()
 def index():
     if 'user_id' in session:
         if session.get('is_restaurante'):
-            flash('Use o aplicativo de restaurante para entrar como restaurante.', 'danger')
-            return redirect(url_for('logout'))
+            session.clear()
+            return redirect(url_for('login'))
         return redirect(url_for('painel_cliente'))
     return render_template('login.html', register_endpoint='cadastro_cliente')
 

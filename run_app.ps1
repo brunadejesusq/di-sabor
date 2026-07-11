@@ -1,7 +1,7 @@
 param(
     [ValidateSet('customer','restaurant','delivery')]
     [string]$App = 'customer',
-    [string]$CredentialsPath = ''
+    [System.Security.SecureString]$CredentialsPath
 )
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -13,12 +13,19 @@ if (-not (Test-Path $python)) {
 }
 
 if ($CredentialsPath) {
-    if (-not (Test-Path $CredentialsPath)) {
+    $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToGlobalAllocUnicode($CredentialsPath)
+    try {
+        $credentialPath = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($ptr)
+    } finally {
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeGlobalAllocUnicode($ptr)
+    }
+
+    if (-not (Test-Path $credentialPath)) {
         Write-Host 'Erro: caminho de credenciais não encontrado:' -ForegroundColor Red
-        Write-Host $CredentialsPath
+        Write-Host $credentialPath
         exit 1
     }
-    $env:FIREBASE_CREDENTIALS = $CredentialsPath
+    $env:FIREBASE_CREDENTIALS = $credentialPath
 } elseif (-not $env:FIREBASE_CREDENTIALS) {
     $defaultCred = Join-Path $root 'firebase_credentials.json'
     if (Test-Path $defaultCred) {
