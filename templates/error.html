@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}Erro{% endblock %}
+
+{% block content %}
+<div class="form-wrapper">
+    <h1>Erro</h1>
+    <p>{{ error_message }}</p>
+    <p>Verifique a configuração do Firebase/Firestore e tente novamente.</p>
+</div>
+{% endblock %}

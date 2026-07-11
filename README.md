@@ -117,8 +117,6 @@ O projeto foi dividido em três aplicações separadas:
     - Coloque `firebase_credentials.json` na raiz do projeto, ou
     - defina `FIREBASE_CREDENTIALS` apontando para o arquivo JSON válido.
 
-    Se você ainda não tem o arquivo, copie `firebase_credentials_example.json` e ajuste com as informações do seu projeto Firebase.
-
 6.  **Execute o app desejado:**
 
     ```bash

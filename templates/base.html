@@ -18,8 +18,8 @@
                 Di Sabor Caseiro
             </a>
             <div class="navbar-menu">
-                {% if session['user_id'] %}
-                    {% if not session['is_restaurante'] %}
+                {% if session.get('user_id') %}
+                    {% if not session.get('is_restaurante') %}
                         <a href="{{ url_for('meus_pedidos') }}">Meus Pedidos</a>
                         
                         <a href="{{ url_for('meus_enderecos') }}">Meus Endereços</a>

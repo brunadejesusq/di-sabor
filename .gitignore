@@ -10,7 +10,6 @@ venv/
 
 # Firebase credentials
 firebase_credentials.json
-firebase_credentials_example.json
 
 # OS files
 .DS_Store

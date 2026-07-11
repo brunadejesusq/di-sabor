@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from enum import Enum
 from database_manager import DatabaseManager
+from google.api_core import exceptions
 import os
 
 class StatusPedido(Enum):
@@ -14,31 +15,42 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = os.urandom(24)
 db = DatabaseManager()
 
+def set_default_restaurant_session():
+    if 'user_id' in session and session.get('is_restaurante'):
+        return True
+    restaurants = db.get_all_restaurants()
+    if not restaurants:
+        return False
+    default_restaurant = restaurants[0]
+    session['user_id'] = default_restaurant['usuario_id']
+    session['is_restaurante'] = True
+    session['restaurante_id'] = default_restaurant['id_restaurante']
+    session['cliente_id'] = None
+    return True
+
 @app.route('/')
 def index():
-    if 'user_id' in session and session.get('is_restaurante'):
+    try:
+        if not set_default_restaurant_session():
+            flash('Nenhum restaurante cadastrado. Cadastre um restaurante primeiro.', 'danger')
+            return redirect(url_for('cadastro_restaurante'))
         return redirect(url_for('painel_restaurante'))
-    return redirect(url_for('login'))
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        usuario = request.form['username']
-        senha = request.form['password']
-        user_data = db.login_user(usuario, senha)
-        if user_data and user_data.get('is_restaurante'):
-            session['user_id'] = user_data['usuario_id']
-            session['is_restaurante'] = True
-            session['restaurante_id'] = user_data['restaurante_id']
-            session['cliente_id'] = None
-            return redirect(url_for('painel_restaurante'))
-        flash('Usuário ou senha inválidos para restaurante.', 'danger')
-    return render_template('login.html')
+    except exceptions.NotFound:
+        error_message = (
+            'Banco Firestore não encontrado para este projeto. ' 
+            'Verifique se o Firestore está configurado no console do Firebase e se as credenciais estão corretas.'
+        )
+        flash(error_message, 'danger')
+        return render_template('error.html', error_message=error_message)
+    except Exception as e:
+        error_message = f'Erro ao conectar com o banco de dados: {e}'
+        flash(error_message, 'danger')
+        return render_template('error.html', error_message=error_message)
 
 @app.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('login'))
+    return redirect(url_for('index'))
 
 @app.route('/pre_cadastro')
 def pre_cadastro():

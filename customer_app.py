@@ -36,7 +36,7 @@ def login():
             session['restaurante_id'] = None
             return redirect(url_for('painel_cliente'))
         flash('Usuário ou senha inválidos para cliente.', 'danger')
-    return render_template('login.html')
+    return render_template('login.html', register_endpoint='cadastro_cliente')
 
 @app.route('/logout')
 def logout():

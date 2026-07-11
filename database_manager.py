@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.api_core import exceptions
 
 
 class DatabaseManager:
@@ -366,7 +367,15 @@ class DatabaseManager:
         return dish_id
 
     def get_all_restaurants(self):
-        restaurants = [doc.to_dict() for doc in self.db.collection("restaurants").stream()]
+        try:
+            restaurants = [doc.to_dict() for doc in self.db.collection("restaurants").stream()]
+        except exceptions.NotFound as e:
+            print(f"Firestore database not found: {e}")
+            return []
+        except Exception as e:
+            print(f"Erro ao buscar restaurantes: {e}")
+            return []
+
         for restaurant in restaurants:
             restaurant["media_avaliacoes"] = self._calculate_average_rating(restaurant["id_restaurante"])
         return restaurants
