@@ -28,6 +28,10 @@ def set_default_restaurant_session():
     session['cliente_id'] = None
     return True
 
+@app.route('/login')
+def login():
+    return redirect(url_for('index'))
+
 @app.route('/')
 def index():
     try:
