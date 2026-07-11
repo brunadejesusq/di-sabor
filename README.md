@@ -114,8 +114,10 @@ O projeto foi dividido em três aplicações separadas:
 
 5.  **Verifique se as credenciais estão acessíveis:**
 
-    - `firebase_credentials.json` deve existir na pasta do projeto, ou
-    - `FIREBASE_CREDENTIALS` deve apontar para o arquivo JSON válido.
+    - Coloque `firebase_credentials.json` na raiz do projeto, ou
+    - defina `FIREBASE_CREDENTIALS` apontando para o arquivo JSON válido.
+
+    Se você ainda não tem o arquivo, copie `firebase_credentials_example.json` e ajuste com as informações do seu projeto Firebase.
 
 6.  **Execute o app desejado:**
 
