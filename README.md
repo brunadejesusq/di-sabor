@@ -69,6 +69,8 @@ O projeto foi dividido em três aplicações separadas:
 - `restaurant_app.py`: site de gerenciamento do restaurante, com pedidos, cardápio, horários e páginas de estoque/rotas para evoluir.
 - `delivery_app.py`: app de motoboy para visualizar rotas de entrega e atualizar status de entregas.
 
+> Cada app é independente e deve ser executado separadamente. Eles não compartilham a mesma página de entrada; cada um tem seu próprio servidor Flask e fluxo de navegação.
+>
 > Nota: arquivos legados (`app.py`, `main.py`, `database_manager_mysql.py`) não fazem parte do fluxo atual e foram deixados apenas para referência histórica. Os três apps principais usam `database_manager.py` com Firebase.
 
 ### 1\. Pré-requisitos

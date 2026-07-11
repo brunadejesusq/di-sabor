@@ -15,16 +15,59 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = os.urandom(24)
 db = DatabaseManager()
 
+def get_or_create_default_restaurant():
+    restaurant = db.get_restaurant_by_name('Di Sabor Caseiro')
+    if restaurant:
+        return restaurant
+
+    default_data = {
+        'usuario': 'di-sabor-caseiro',
+        'email': 'contato@disaborcaseiro.com',
+        'senha': 'di-sabor',
+        'nome': 'Di Sabor Caseiro',
+        'telefone': '(11) 99999-9999',
+        'tipo_culinaria': 'Brasileira',
+        'taxa_entrega': '5.00',
+        'tempo_estimado': '45 minutos',
+        'endereco': {
+            'rua': 'Rua Principal',
+            'num': '123',
+            'bairro': 'Centro',
+            'cidade': 'São Paulo',
+            'estado': 'SP',
+            'cep': '01000-000',
+        },
+    }
+
+    novo_restaurante_data = db.create_restaurant(
+        default_data['usuario'],
+        default_data['email'],
+        default_data['senha'],
+        default_data['nome'],
+        default_data['telefone'],
+        default_data['tipo_culinaria'],
+        default_data['endereco'],
+        default_data['taxa_entrega'],
+        default_data['tempo_estimado'],
+    )
+
+    if not novo_restaurante_data:
+        return None
+
+    return db.get_restaurant_by_name('Di Sabor Caseiro')
+
+
 def set_default_restaurant_session():
     if 'user_id' in session and session.get('is_restaurante'):
         return True
-    restaurants = db.get_all_restaurants()
-    if not restaurants:
+    restaurant = db.get_or_create_default_restaurant() if hasattr(db, 'get_or_create_default_restaurant') else None
+    if not restaurant:
+        restaurant = get_or_create_default_restaurant()
+    if not restaurant:
         return False
-    default_restaurant = restaurants[0]
-    session['user_id'] = default_restaurant['usuario_id']
+    session['user_id'] = restaurant['usuario_id']
     session['is_restaurante'] = True
-    session['restaurante_id'] = default_restaurant['id_restaurante']
+    session['restaurante_id'] = restaurant['id_restaurante']
     session['cliente_id'] = None
     return True
 
