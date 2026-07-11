@@ -40,6 +40,10 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
+@app.route('/pre_cadastro')
+def pre_cadastro():
+    return render_template('cadastro_restaurante.html')
+
 @app.route('/cadastro_restaurante', methods=['GET', 'POST'])
 def cadastro_restaurante():
     if request.method == 'POST':
