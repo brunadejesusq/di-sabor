@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash
+from datetime import timedelta
 from enum import Enum
 from database_manager import DatabaseManager
 import os
@@ -12,6 +13,9 @@ class StatusPedido(Enum):
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = os.urandom(24)
+app.permanent_session_lifetime = timedelta(days=30)
+app.config['SESSION_COOKIE_NAME'] = 'customer_session'
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 db = DatabaseManager()
 
 @app.route('/')
@@ -30,6 +34,7 @@ def login():
         senha = request.form['password']
         user_data = db.login_user(usuario, senha)
         if user_data and not user_data.get('is_restaurante'):
+            session.permanent = True
             session['user_id'] = user_data['usuario_id']
             session['is_restaurante'] = False
             session['cliente_id'] = user_data['cliente_id']
@@ -58,7 +63,15 @@ def cadastro_cliente():
         senha = request.form['senha']
         cliente_id = db.create_client(usuario, email, senha, nome_completo, telefone, cpf)
         if cliente_id:
-            flash('Cadastro realizado com sucesso! Faça seu login.', 'success')
+            user_data = db.login_user(usuario, senha)
+            if user_data and not user_data.get('is_restaurante'):
+                session.permanent = True
+                session['user_id'] = user_data['usuario_id']
+                session['is_restaurante'] = False
+                session['cliente_id'] = user_data['cliente_id']
+                session['restaurante_id'] = None
+                return redirect(url_for('painel_cliente'))
+            flash('Cadastro realizado, mas não foi possível fazer login automático.', 'warning')
             return redirect(url_for('login'))
         flash('Usuário ou email já existem. Tente novamente.', 'danger')
         return redirect(url_for('cadastro_cliente'))

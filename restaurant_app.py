@@ -13,6 +13,8 @@ class StatusPedido(Enum):
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = os.urandom(24)
+app.config['SESSION_COOKIE_NAME'] = 'restaurant_session'
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 db = DatabaseManager()
 
 DEFAULT_RESTAURANT = {
@@ -36,25 +38,6 @@ DEFAULT_RESTAURANT = {
 
 
 def ensure_default_restaurant():
-    restaurant = db.get_restaurant_by_name(DEFAULT_RESTAURANT['nome'])
-    if restaurant:
-        return restaurant
-
-    novo_restaurante_data = db.create_restaurant(
-        DEFAULT_RESTAURANT['usuario'],
-        DEFAULT_RESTAURANT['email'],
-        DEFAULT_RESTAURANT['senha'],
-        DEFAULT_RESTAURANT['nome'],
-        DEFAULT_RESTAURANT['telefone'],
-        DEFAULT_RESTAURANT['tipo_culinaria'],
-        DEFAULT_RESTAURANT['endereco'],
-        DEFAULT_RESTAURANT['taxa_entrega'],
-        DEFAULT_RESTAURANT['tempo_estimado'],
-    )
-
-    if not novo_restaurante_data:
-        return None
-
     return db.get_restaurant_by_name(DEFAULT_RESTAURANT['nome'])
 
 

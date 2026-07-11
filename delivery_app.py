@@ -4,6 +4,8 @@ import os
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = os.urandom(24)
+app.config['SESSION_COOKIE_NAME'] = 'delivery_session'
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 db = DatabaseManager()
 
 @app.route('/')
